@@ -2,6 +2,9 @@
 //|                                                  Environment.mqh |
 //|                                  EMSR ECLIPSED QUANT EA v1.0.0   |
 //+------------------------------------------------------------------+
+#property copyright "EMSR Quant Team"
+#property version   "1.00"
+
 #include "Defines.mqh"
 
 class CEnvironmentEngine
