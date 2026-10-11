@@ -2,6 +2,9 @@
 //|                                                   RiskEngine.mqh |
 //|                                  EMSR ECLIPSED QUANT EA v1.0.0   |
 //+------------------------------------------------------------------+
+#property copyright "EMSR Quant Team"
+#property version   "1.00"
+
 #include "Defines.mqh"
 #include "Environment.mqh"
 
@@ -58,10 +61,9 @@ public:
          return;
       }
 
-      // Perhitungan Biaya Transaksi dalam R
       double spreadPoints = (double)SymbolInfoInteger(symbol, SYMBOL_SPREAD);
       double spreadMonetary = spreadPoints * p.pointSize * (p.tickValue / p.tickSize) * outRisk.adjustedLot;
-      double commissionEst = 0.0; // Disesuaikan dengan struktur komisi broker jika ada
+      double commissionEst = 0.0;
       double totalCostMonetary = spreadMonetary + commissionEst;
 
       outRisk.costInR = totalCostMonetary / targetRiskMonetary;
