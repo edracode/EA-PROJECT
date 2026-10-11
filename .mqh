@@ -21,6 +21,13 @@ enum ENUM_LOCK_STATE
    LOCK_STATE_SAFE_MODE
 };
 
+enum ENUM_TRADE_SIGNAL
+{
+   SIGNAL_NO_TRADE = 0,
+   SIGNAL_BUY,
+   SIGNAL_SELL
+};
+
 struct StSymbolParams
 {
    string   symbol;
