@@ -109,7 +109,7 @@ void OnTick()
       int lowestIdx = iLowest(_Symbol, PERIOD_M15, MODE_LOW, 10, 1);
       double swingLow = iLow(_Symbol, PERIOD_M15, lowestIdx);
       rawSl = swingLow - (0.2 * atr_m15);
-      if((ask - rawSl) < (1.0 * atr_m15)) return; // Validasi Jarak SL Minimum ATR
+      if((ask - rawSl) < (1.0 * atr_m15)) return;
 
       StTradeRisk risk;
       CRiskEngine::CalculateOrder(_Symbol, ORDER_TYPE_BUY, ask, rawSl, targetRisk, InpMaxCostRatioR, risk);
@@ -123,7 +123,7 @@ void OnTick()
       int highestIdx = iHighest(_Symbol, PERIOD_M15, MODE_HIGH, 10, 1);
       double swingHigh = iHigh(_Symbol, PERIOD_M15, highestIdx);
       rawSl = swingHigh + (0.2 * atr_m15);
-      if((rawSl - bid) < (1.0 * atr_m15)) return; // Validasi Jarak SL Minimum ATR
+      if((rawSl - bid) < (1.0 * atr_m15)) return;
 
       StTradeRisk risk;
       CRiskEngine::CalculateOrder(_Symbol, ORDER_TYPE_SELL, bid, rawSl, targetRisk, InpMaxCostRatioR, risk);
