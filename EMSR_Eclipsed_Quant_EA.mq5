@@ -2,11 +2,14 @@
 //|                                 EMSR_Eclipsed_Quant_EA.mq5       |
 //|                                  EMSR ECLIPSED QUANT EA v1.0.0   |
 //+------------------------------------------------------------------+
-#include "Include/Defines.mqh"
-#include "Include/Environment.mqh"
-#include "Include/IndicatorEngine.mqh"
-#include "Include/RiskEngine.mqh"
-#include "Include/Persistence.mqh"
+#property copyright "EMSR Quant Team"
+#property version   "1.00"
+
+#include <EMSR_Eclipsed_Quant/Defines.mqh>
+#include <EMSR_Eclipsed_Quant/Environment.mqh>
+#include <EMSR_Eclipsed_Quant/IndicatorEngine.mqh>
+#include <EMSR_Eclipsed_Quant/RiskEngine.mqh>
+#include <EMSR_Eclipsed_Quant/Persistence.mqh>
 #include <Trade/Trade.mqh>
 
 input double InpInitialCapital    = 500000.0; // Modal Acuan (Rp)
@@ -103,7 +106,8 @@ void OnTick()
 
    if(signal == SIGNAL_BUY)
    {
-      double swingLow = iLow(_Symbol, PERIOD_M15, iLowest(_Symbol, PERIOD_M15, MODE_LOW, 10, 1));
+      int lowestIdx = iLowest(_Symbol, PERIOD_M15, MODE_LOW, 10, 1);
+      double swingLow = iLow(_Symbol, PERIOD_M15, lowestIdx);
       rawSl = swingLow - (0.2 * atr_m15);
       if((ask - rawSl) < (1.0 * atr_m15)) return; // Validasi Jarak SL Minimum ATR
 
@@ -116,7 +120,8 @@ void OnTick()
    }
    else if(signal == SIGNAL_SELL)
    {
-      double swingHigh = iHigh(_Symbol, PERIOD_M15, iHighest(_Symbol, PERIOD_M15, MODE_HIGH, 10, 1));
+      int highestIdx = iHighest(_Symbol, PERIOD_M15, MODE_HIGH, 10, 1);
+      double swingHigh = iHigh(_Symbol, PERIOD_M15, highestIdx);
       rawSl = swingHigh + (0.2 * atr_m15);
       if((rawSl - bid) < (1.0 * atr_m15)) return; // Validasi Jarak SL Minimum ATR
 
