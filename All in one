@@ -1,0 +1,424 @@
+//+------------------------------------------------------------------+
+//|                                 EMSR_Eclipsed_Quant_EA.mq5       |
+//|                                  EMSR ECLIPSED QUANT EA v1.0.0   |
+//+------------------------------------------------------------------+
+#property copyright "EMSR Quant Team"
+#property version   "1.00"
+
+#include <Trade/Trade.mqh>
+
+//====================================================================
+// 1. DEFINES & STRUCTS
+//====================================================================
+enum ENUM_MARKET_REGIME
+{
+   REGIME_NO_TRADE = 0,
+   REGIME_TREND_BULLISH,
+   REGIME_TREND_BEARISH,
+   REGIME_RANGING,
+   REGIME_HIGH_VOLATILITY
+};
+
+enum ENUM_LOCK_STATE
+{
+   LOCK_STATE_CLEAR = 0,
+   LOCK_STATE_LOCKED,
+   LOCK_STATE_SAFE_MODE
+};
+
+enum ENUM_TRADE_SIGNAL
+{
+   SIGNAL_NO_TRADE = 0,
+   SIGNAL_BUY,
+   SIGNAL_SELL
+};
+
+struct StSymbolParams
+{
+   string   symbol;
+   double   pointSize;
+   double   tickSize;
+   double   tickValue;
+   double   contractSize;
+   double   minVolume;
+   double   maxVolume;
+   double   volumeStep;
+   int      digits;
+};
+
+struct StTradeRisk
+{
+   double   rawLot;
+   double   adjustedLot;
+   double   monetaryRisk;
+   double   costInR;
+   double   slPrice;
+   double   tpPrice;
+   bool     isValid;
+   string   rejectionReason;
+};
+
+struct StDailyState
+{
+   datetime lastResetTime;
+   double   startingEquity;
+   double   realizedPL;
+   double   floatingPL;
+   bool     isLocked;
+   bool     isSafeMode;
+};
+
+//====================================================================
+// 2. ENVIRONMENT ENGINE
+//====================================================================
+class CEnvironmentEngine
+{
+public:
+   static bool GetSymbolParams(const string symbol, StSymbolParams &params)
+   {
+      params.symbol       = symbol;
+      params.pointSize    = SymbolInfoDouble(symbol, SYMBOL_POINT);
+      params.tickSize     = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+      params.tickValue    = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+      params.contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+      params.minVolume    = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+      params.maxVolume    = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+      params.volumeStep   = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+      params.digits       = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+
+      if(params.tickSize <= 0 || params.tickValue <= 0 || params.volumeStep <= 0)
+      {
+         PrintFormat("[ENV ERROR] Spesifikasi simbol %s tidak valid!", symbol);
+         return false;
+      }
+      return true;
+   }
+};
+
+//====================================================================
+// 3. INDICATOR ENGINE
+//====================================================================
+class CIndicatorEngine
+{
+private:
+   int m_hEma20_M15, m_hEma50_M15;
+   int m_hEma20_H1,  m_hEma50_H1;
+   int m_hAdx_M15,   m_hAtr_M15;
+
+public:
+   bool Init(const string symbol)
+   {
+      m_hEma20_M15 = iMA(symbol, PERIOD_M15, 20, 0, MODE_EMA, PRICE_CLOSE);
+      m_hEma50_M15 = iMA(symbol, PERIOD_M15, 50, 0, MODE_EMA, PRICE_CLOSE);
+      m_hEma20_H1  = iMA(symbol, PERIOD_H1,  20, 0, MODE_EMA, PRICE_CLOSE);
+      m_hEma50_H1  = iMA(symbol, PERIOD_H1,  50, 0, MODE_EMA, PRICE_CLOSE);
+      m_hAdx_M15   = iADX(symbol, PERIOD_M15, 14);
+      m_hAtr_M15   = iATR(symbol, PERIOD_M15, 14);
+
+      if(m_hEma20_M15 == INVALID_HANDLE || m_hEma50_M15 == INVALID_HANDLE ||
+         m_hEma20_H1  == INVALID_HANDLE || m_hEma50_H1  == INVALID_HANDLE ||
+         m_hAdx_M15   == INVALID_HANDLE || m_hAtr_M15   == INVALID_HANDLE)
+      {
+         Print("[IND ERROR] Gagal menginisialisasi handle indikator MQL5.");
+         return false;
+      }
+      return true;
+   }
+
+   bool GetM15Data(const string symbol, double &ema20, double &ema50, double &adx, double &plusDi, double &minusDi, double &atr)
+   {
+      double bEma20[1], bEma50[1], bAdx[1], bPlusDi[1], bMinusDi[1], bAtr[1];
+
+      if(CopyBuffer(m_hEma20_M15, 0, 1, 1, bEma20) <= 0 ||
+         CopyBuffer(m_hEma50_M15, 0, 1, 1, bEma50) <= 0 ||
+         CopyBuffer(m_hAdx_M15, 0, 1, 1, bAdx) <= 0 ||
+         CopyBuffer(m_hAdx_M15, 1, 1, 1, bPlusDi) <= 0 ||
+         CopyBuffer(m_hAdx_M15, 2, 1, 1, bMinusDi) <= 0 ||
+         CopyBuffer(m_hAtr_M15, 0, 1, 1, bAtr) <= 0)
+      {
+         return false;
+      }
+
+      ema20   = bEma20[0];
+      ema50   = bEma50[0];
+      adx     = bAdx[0];
+      plusDi  = bPlusDi[0];
+      minusDi = bMinusDi[0];
+      atr     = bAtr[0];
+      return true;
+   }
+
+   bool GetH1Trend(double &ema20, double &ema50)
+   {
+      double bEma20[1], bEma50[1];
+      if(CopyBuffer(m_hEma20_H1, 0, 1, 1, bEma20) <= 0 ||
+         CopyBuffer(m_hEma50_H1, 0, 1, 1, bEma50) <= 0) return false;
+
+      ema20 = bEma20[0];
+      ema50 = bEma50[0];
+      return true;
+   }
+};
+
+//====================================================================
+// 4. RISK ENGINE
+//====================================================================
+class CRiskEngine
+{
+public:
+   static void CalculateOrder(const string symbol,
+                             const ENUM_ORDER_TYPE orderType,
+                             const double entryPrice,
+                             const double rawSlPrice,
+                             const double targetRiskMonetary,
+                             const double maxCostRatio,
+                             StTradeRisk &outRisk)
+   {
+      outRisk.isValid = false;
+      StSymbolParams p;
+      if(!CEnvironmentEngine::GetSymbolParams(symbol, p))
+      {
+         outRisk.rejectionReason = "ERR_ENV_FAILED";
+         return;
+      }
+
+      double priceRisk = MathAbs(entryPrice - rawSlPrice);
+      if(priceRisk <= 0)
+      {
+         outRisk.rejectionReason = "ERR_INVALID_SL_PRICE";
+         return;
+      }
+
+      double ticksAtRisk = priceRisk / p.tickSize;
+      double riskPerLot  = ticksAtRisk * p.tickValue;
+
+      if(riskPerLot <= 0)
+      {
+         outRisk.rejectionReason = "ERR_ZERO_RISK_PER_LOT";
+         return;
+      }
+
+      outRisk.rawLot = targetRiskMonetary / riskPerLot;
+      double steppedLot = MathFloor(outRisk.rawLot / p.volumeStep) * p.volumeStep;
+
+      if(steppedLot < p.minVolume)
+      {
+         outRisk.rejectionReason = "REJECT_LOT_BELOW_MINIMUM";
+         return;
+      }
+
+      outRisk.adjustedLot = MathMin(steppedLot, p.maxVolume);
+      outRisk.monetaryRisk = outRisk.adjustedLot * riskPerLot;
+
+      if(outRisk.monetaryRisk > targetRiskMonetary)
+      {
+         outRisk.rejectionReason = "REJECT_RISK_EXCEEDS_TARGET";
+         return;
+      }
+
+      double spreadPoints = (double)SymbolInfoInteger(symbol, SYMBOL_SPREAD);
+      double spreadMonetary = spreadPoints * p.pointSize * (p.tickValue / p.tickSize) * outRisk.adjustedLot;
+      double commissionEst = 0.0;
+      double totalCostMonetary = spreadMonetary + commissionEst;
+
+      outRisk.costInR = totalCostMonetary / targetRiskMonetary;
+
+      if(outRisk.costInR > maxCostRatio)
+      {
+         outRisk.rejectionReason = "REJECT_TRANSACTION_COST_TOO_HIGH";
+         return;
+      }
+
+      outRisk.slPrice = NormalizeDouble(rawSlPrice, p.digits);
+      if(orderType == ORDER_TYPE_BUY)
+         outRisk.tpPrice = NormalizeDouble(entryPrice + 3.0 * (entryPrice - outRisk.slPrice), p.digits);
+      else
+         outRisk.tpPrice = NormalizeDouble(entryPrice - 3.0 * (outRisk.slPrice - entryPrice), p.digits);
+
+      outRisk.isValid = true;
+      outRisk.rejectionReason = "NONE";
+   }
+};
+
+//====================================================================
+// 5. PERSISTENCE ENGINE
+//====================================================================
+class CPersistenceEngine
+{
+private:
+   string m_fileName;
+   string m_gvPrefix;
+
+public:
+   CPersistenceEngine()
+   {
+      m_fileName = "EMSR_State_v100.bin";
+      m_gvPrefix = "EMSR_LOCK_";
+   }
+
+   bool SaveState(const StDailyState &state)
+   {
+      GlobalVariableSet(m_gvPrefix + "EQUITY", state.startingEquity);
+      GlobalVariableSet(m_gvPrefix + "LOCKED", state.isLocked ? 1.0 : 0.0);
+      GlobalVariableSet(m_gvPrefix + "SAFE",   state.isSafeMode ? 1.0 : 0.0);
+
+      int handle = FileOpen(m_fileName, FILE_WRITE|FILE_BIN);
+      if(handle == INVALID_HANDLE) return false;
+
+      FileWriteStruct(handle, state);
+      FileClose(handle);
+      return true;
+   }
+
+   bool LoadState(StDailyState &state)
+   {
+      StDailyState fileState;
+      ZeroMemory(fileState);
+
+      int handle = FileOpen(m_fileName, FILE_READ|FILE_BIN);
+      bool fileValid = false;
+
+      if(handle != INVALID_HANDLE)
+      {
+         if(FileReadStruct(handle, fileState) > 0) fileValid = true;
+         FileClose(handle);
+      }
+
+      double gvEquity = GlobalVariableGet(m_gvPrefix + "EQUITY");
+
+      if(!fileValid || gvEquity == 0)
+      {
+         state.isSafeMode = true;
+         Print("[PERSISTENCE WARNING] Discrepancy detected! Activating SAFE MODE.");
+         return false;
+      }
+
+      state = fileState;
+      return true;
+   }
+};
+
+//====================================================================
+// 6. MAIN EXPERT ADVISOR
+//====================================================================
+input double InpInitialCapital    = 500000.0; // Modal Acuan (Rp)
+input double InpRiskPerTradePct   = 0.25;     // Risiko per Transaksi (%)
+input double InpDailyLossLimitPct = 2.0;      // Batas Kerugian Harian (%)
+input double InpMaxCostRatioR     = 0.12;     // Maksimal Biaya Transaksi (R)
+input ulong  InpMagicNumber       = 20261011;
+
+CIndicatorEngine   g_indicators;
+CPersistenceEngine g_persistence;
+CTrade             g_trade;
+StDailyState       g_dailyState;
+datetime           g_lastBarTime;
+
+int OnInit()
+{
+   g_trade.SetExpertMagicNumber(InpMagicNumber);
+   if(!g_indicators.Init(_Symbol)) return INIT_FAILED;
+
+   if(!g_persistence.LoadState(g_dailyState))
+   {
+      g_dailyState.startingEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+      g_dailyState.lastResetTime  = TimeCurrent();
+      g_dailyState.isLocked       = false;
+      g_dailyState.isSafeMode     = false;
+      g_persistence.SaveState(g_dailyState);
+   }
+
+   return INIT_SUCCEEDED;
+}
+
+void OnDeinit(const int reason)
+{
+   g_persistence.SaveState(g_dailyState);
+}
+
+void OnTick()
+{
+   // 1. Verifikasi Reset Tanggal Server
+   MqlDateTime dtCurrent, dtLast;
+   TimeToStruct(TimeCurrent(), dtCurrent);
+   TimeToStruct(g_dailyState.lastResetTime, dtLast);
+
+   if(dtCurrent.day != dtLast.day && PositionsTotal() == 0)
+   {
+      g_dailyState.startingEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+      g_dailyState.lastResetTime  = TimeCurrent();
+      g_dailyState.isLocked       = false;
+      g_persistence.SaveState(g_dailyState);
+      Print("[DAILY RESET] Reset harian berhasil dilaksanakan.");
+   }
+
+   // 2. Evaluasi Proteksi Kerugian Harian
+   double maxDailyLossAllowed = InpInitialCapital * (InpDailyLossLimitPct / 100.0);
+   double currentEquity       = AccountInfoDouble(ACCOUNT_EQUITY);
+   double currentDailyLoss    = MathMax(0.0, g_dailyState.startingEquity - currentEquity);
+
+   if(currentDailyLoss >= maxDailyLossAllowed)
+   {
+      g_dailyState.isLocked = true;
+      g_persistence.SaveState(g_dailyState);
+   }
+
+   if(g_dailyState.isLocked || g_dailyState.isSafeMode) return;
+
+   // 3. Eksekusi Hanya Pada Bar Baru M15
+   datetime currentBarTime = iTime(_Symbol, PERIOD_M15, 0);
+   if(currentBarTime == g_lastBarTime) return;
+   g_lastBarTime = currentBarTime;
+
+   // 4. Analisis Multi-Timeframe (H1 & M15)
+   double ema20_h1, ema50_h1;
+   if(!g_indicators.GetH1Trend(ema20_h1, ema50_h1)) return;
+
+   double ema20_m15, ema50_m15, adx_m15, pDi, mDi, atr_m15;
+   if(!g_indicators.GetM15Data(_Symbol, ema20_m15, ema50_m15, adx_m15, pDi, mDi, atr_m15)) return;
+
+   bool isH1Bullish = (ema20_h1 > ema50_h1);
+   bool isH1Bearish = (ema20_h1 < ema50_h1);
+   bool isM15Bull   = (ema20_m15 > ema50_m15) && (adx_m15 >= 25.0) && (pDi > mDi);
+   bool isM15Bear   = (ema20_m15 < ema50_m15) && (adx_m15 >= 25.0) && (mDi > pDi);
+
+   ENUM_TRADE_SIGNAL signal = SIGNAL_NO_TRADE;
+   if(isH1Bullish && isM15Bull) signal = SIGNAL_BUY;
+   else if(isH1Bearish && isM15Bear) signal = SIGNAL_SELL;
+
+   if(signal == SIGNAL_NO_TRADE || PositionsTotal() > 0) return;
+
+   // 5. Kalkulasi Stop-Loss Berbasis Swing Point & ATR
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double rawSl = 0.0;
+   double targetRisk = InpInitialCapital * (InpRiskPerTradePct / 100.0);
+
+   if(signal == SIGNAL_BUY)
+   {
+      int lowestIdx = iLowest(_Symbol, PERIOD_M15, MODE_LOW, 10, 1);
+      double swingLow = iLow(_Symbol, PERIOD_M15, lowestIdx);
+      rawSl = swingLow - (0.2 * atr_m15);
+      if((ask - rawSl) < (1.0 * atr_m15)) return;
+
+      StTradeRisk risk;
+      CRiskEngine::CalculateOrder(_Symbol, ORDER_TYPE_BUY, ask, rawSl, targetRisk, InpMaxCostRatioR, risk);
+      if(risk.isValid)
+      {
+         g_trade.Buy(risk.adjustedLot, _Symbol, ask, risk.slPrice, risk.tpPrice, "EMSR_v100_BUY");
+      }
+   }
+   else if(signal == SIGNAL_SELL)
+   {
+      int highestIdx = iHighest(_Symbol, PERIOD_M15, MODE_HIGH, 10, 1);
+      double swingHigh = iHigh(_Symbol, PERIOD_M15, highestIdx);
+      rawSl = swingHigh + (0.2 * atr_m15);
+      if((rawSl - bid) < (1.0 * atr_m15)) return;
+
+      StTradeRisk risk;
+      CRiskEngine::CalculateOrder(_Symbol, ORDER_TYPE_SELL, bid, rawSl, targetRisk, InpMaxCostRatioR, risk);
+      if(risk.isValid)
+      {
+         g_trade.Sell(risk.adjustedLot, _Symbol, bid, risk.slPrice, risk.tpPrice, "EMSR_v100_SELL");
+      }
+   }
+}
