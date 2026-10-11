@@ -2,6 +2,9 @@
 //|                                                  Persistence.mqh |
 //|                                  EMSR ECLIPSED QUANT EA v1.0.0   |
 //+------------------------------------------------------------------+
+#property copyright "EMSR Quant Team"
+#property version   "1.00"
+
 #include "Defines.mqh"
 
 class CPersistenceEngine
@@ -19,12 +22,10 @@ public:
 
    bool SaveState(const StDailyState &state)
    {
-      // 1. Simpan ke Global Variables
       GlobalVariableSet(m_gvPrefix + "EQUITY", state.startingEquity);
       GlobalVariableSet(m_gvPrefix + "LOCKED", state.isLocked ? 1.0 : 0.0);
       GlobalVariableSet(m_gvPrefix + "SAFE",   state.isSafeMode ? 1.0 : 0.0);
 
-      // 2. Simpan ke File Biner Lokal
       int handle = FileOpen(m_fileName, FILE_WRITE|FILE_BIN);
       if(handle == INVALID_HANDLE) return false;
 
@@ -48,8 +49,6 @@ public:
       }
 
       double gvEquity = GlobalVariableGet(m_gvPrefix + "EQUITY");
-      double gvLocked = GlobalVariableGet(m_gvPrefix + "LOCKED");
-      double gvSafe   = GlobalVariableGet(m_gvPrefix + "SAFE");
 
       if(!fileValid || gvEquity == 0)
       {
